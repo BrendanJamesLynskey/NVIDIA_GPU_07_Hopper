@@ -1,0 +1,1638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NVIDIA GPU 07 — Hopper Deep Dive</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-card: #0d1117;
+            --bg-code: #161b22;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent: #76B900;
+            --accent-dim: #76B90044;
+            --accent-glow: #76B90033;
+            --border: #21262d;
+            --font-display: 'Space Grotesk', sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+            --font-body: 'Inter', sans-serif;
+            --max-width: 900px;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            font-size: 17px;
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+
+        /* ── Header ── */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 1.5rem;
+            text-align: center;
+            position: relative;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .hero > * {
+            position: relative;
+            z-index: 1;
+        }
+
+        .series-label {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+        }
+
+        .hero h1 {
+            font-family: var(--font-display);
+            font-size: clamp(2rem, 5vw, 3.2rem);
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.2;
+            margin-bottom: 1rem;
+        }
+
+        .hero h1 .accent {
+            color: var(--accent);
+        }
+
+        .hero .subtitle {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin-bottom: 2rem;
+        }
+
+        /* ── Tag Pills ── */
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            justify-content: center;
+            margin-bottom: 2.5rem;
+        }
+
+        .tag {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            background: var(--accent-dim);
+            white-space: nowrap;
+        }
+
+        /* ── Pipeline Flow Bar ── */
+        .pipeline {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+            margin-bottom: 1rem;
+            max-width: var(--max-width);
+        }
+
+        .pipeline-step {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            padding: 0.3rem 0.7rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+
+        .pipeline-arrow {
+            color: var(--accent);
+            font-size: 0.9rem;
+            font-weight: 700;
+        }
+
+        /* ── Slides ── */
+        .slide {
+            min-height: 100vh;
+            max-width: var(--max-width);
+            margin: 0 auto;
+            padding: 4rem 1.5rem;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .slide-number {
+            font-family: var(--font-display);
+            font-size: 5rem;
+            font-weight: 700;
+            color: var(--accent-dim);
+            position: absolute;
+            top: 2rem;
+            right: 1.5rem;
+            line-height: 1;
+            user-select: none;
+        }
+
+        .slide h2 {
+            font-family: var(--font-display);
+            font-size: 1.9rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 1.5rem;
+            line-height: 1.25;
+        }
+
+        .slide h3 {
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .slide p {
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .slide p strong {
+            color: var(--text-primary);
+        }
+
+        .slide ul, .slide ol {
+            margin-bottom: 1rem;
+            padding-left: 1.5rem;
+            color: var(--text-secondary);
+        }
+
+        .slide li {
+            margin-bottom: 0.4rem;
+        }
+
+        .slide li strong {
+            color: var(--text-primary);
+        }
+
+        /* ── Code Blocks ── */
+        .code-block {
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 1.25rem 0;
+            overflow: hidden;
+        }
+
+        .code-header {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent);
+            background: rgba(118, 185, 0, 0.08);
+            padding: 0.4rem 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .code-block pre {
+            margin: 0;
+            padding: 1rem;
+            overflow-x: auto;
+        }
+
+        .code-block code {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: #c9d1d9;
+        }
+
+        /* Syntax highlighting (manual) */
+        .kw { color: #ff7b72; }
+        .fn { color: #d2a8ff; }
+        .str { color: #a5d6ff; }
+        .cm { color: #8b949e; font-style: italic; }
+        .num { color: #79c0ff; }
+        .type { color: #ffa657; }
+        .dir { color: #ff7b72; }
+        .mac { color: #ffa657; }
+
+        /* ── Tables ── */
+        .table-wrap {
+            overflow-x: auto;
+            margin: 1.25rem 0;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            font-family: var(--font-display);
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:nth-child(even) td {
+            background: rgba(13, 17, 23, 0.5);
+        }
+
+        /* ── Diagrams ── */
+        .diagram-flow {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .diagram-box {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .diagram-box.accent {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(118, 185, 0, 0.08);
+        }
+
+        .diagram-box.dim {
+            color: var(--text-secondary);
+            border-color: var(--border);
+        }
+
+        .diagram-arrow {
+            color: var(--accent);
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+
+        /* Vertical flow diagrams */
+        .diagram-vertical {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.3rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .diagram-vertical .diagram-arrow {
+            font-size: 1.1rem;
+        }
+
+        /* Nested hierarchy diagram */
+        .hierarchy {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .hierarchy-level {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .hierarchy-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            min-width: 80px;
+            text-align: right;
+        }
+
+        .hierarchy-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+        }
+
+        .hierarchy-item {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+
+        .hierarchy-item.accent {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(118, 185, 0, 0.08);
+        }
+
+        /* Grid diagram */
+        .diagram-grid {
+            display: grid;
+            gap: 0.75rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .diagram-grid.cols-2 {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .diagram-grid.cols-3 {
+            grid-template-columns: 1fr 1fr 1fr;
+        }
+
+        .diagram-panel {
+            padding: 1rem;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+
+        .diagram-panel.accent-border {
+            border-left: 3px solid var(--accent);
+        }
+
+        .diagram-panel h4 {
+            font-family: var(--font-display);
+            font-size: 1rem;
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+        }
+
+        .diagram-panel p, .diagram-panel ul {
+            font-size: 0.85rem;
+        }
+
+        /* ── Callout Boxes ── */
+        .callout {
+            background: var(--bg-card);
+            border-left: 3px solid var(--accent);
+            border-radius: 0 8px 8px 0;
+            padding: 1rem 1.25rem;
+            margin: 1.25rem 0;
+        }
+
+        .callout p {
+            margin-bottom: 0;
+        }
+
+        .callout .callout-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.3rem;
+        }
+
+        /* ── Tier Visual ── */
+        .tier-visual {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .tier-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .tier-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            min-width: 90px;
+            text-align: right;
+        }
+
+        .tier-fill {
+            height: 32px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            padding: 0 0.75rem;
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            white-space: nowrap;
+            transition: width 0.6s ease;
+        }
+
+        .tier-cost {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            min-width: 70px;
+        }
+
+        /* ── Contents list ── */
+        .contents-list {
+            list-style: none;
+            padding-left: 0;
+            counter-reset: contents;
+        }
+
+        .contents-list li {
+            counter-increment: contents;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .contents-list li:last-child {
+            border-bottom: none;
+        }
+
+        .contents-list li::before {
+            content: counter(contents, decimal-leading-zero);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent);
+            min-width: 2rem;
+        }
+
+        .contents-list a {
+            color: var(--text-primary);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        .contents-list a:hover {
+            color: var(--accent);
+        }
+
+        /* ── Footer ── */
+        .footer {
+            text-align: center;
+            padding: 3rem 1.5rem;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+            max-width: var(--max-width);
+            margin: 0 auto;
+        }
+
+        .footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 640px) {
+            .slide {
+                padding: 3rem 1rem;
+                min-height: auto;
+            }
+
+            .slide-number {
+                font-size: 3rem;
+                top: 1.5rem;
+                right: 1rem;
+            }
+
+            .slide h2 {
+                font-size: 1.5rem;
+            }
+
+            .diagram-grid.cols-2,
+            .diagram-grid.cols-3 {
+                grid-template-columns: 1fr;
+            }
+
+            .pipeline {
+                gap: 0.15rem;
+            }
+
+            .pipeline-step {
+                font-size: 0.6rem;
+                padding: 0.2rem 0.4rem;
+            }
+
+            .hero h1 {
+                font-size: 1.8rem;
+            }
+
+            table {
+                font-size: 0.78rem;
+            }
+
+            .tier-label {
+                min-width: 60px;
+                font-size: 0.65rem;
+            }
+
+            .tier-fill {
+                font-size: 0.6rem;
+                height: 26px;
+            }
+        }
+
+        /* ── Interactive controls (added for Local LLM series) ── */
+        .control-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+            margin: 1.25rem 0;
+        }
+        .control-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        .control-row label {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            min-width: 180px;
+        }
+        .control-row input[type="range"] {
+            flex: 1;
+            min-width: 160px;
+            accent-color: var(--accent);
+        }
+        .control-row input[type="number"],
+        .control-row select {
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 4px;
+            padding: 0.3rem 0.5rem;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+        }
+        .control-row .val {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent);
+            min-width: 80px;
+            text-align: right;
+        }
+        .btn {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            padding: 0.4rem 0.9rem;
+            background: var(--accent-dim);
+            color: var(--accent);
+            border: 1px solid var(--accent);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+        .btn:hover { background: rgba(118, 185, 0, 0.2); }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn.secondary {
+            background: var(--bg-code);
+            color: var(--text-secondary);
+            border-color: var(--border);
+        }
+        .result-box {
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--accent);
+            border-radius: 4px;
+            padding: 0.75rem 1rem;
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            margin-top: 0.75rem;
+        }
+        .result-box .line-label { color: var(--text-secondary); }
+        .result-box .line-val   { color: var(--accent); font-weight: 600; }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 0.5rem;
+            margin-top: 0.75rem;
+        }
+        .metric {
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.6rem 0.8rem;
+            text-align: center;
+        }
+        .metric .metric-label {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+        .metric .metric-value {
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            color: var(--accent);
+            font-weight: 600;
+            margin-top: 0.2rem;
+        }
+
+        /* Canvas / SVG containers */
+        .canvas-wrap {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1.25rem 0;
+            overflow-x: auto;
+        }
+        .canvas-wrap canvas,
+        .canvas-wrap svg {
+            display: block;
+            margin: 0 auto;
+            max-width: 100%;
+        }
+
+        /* Small inline badge */
+        .badge {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            padding: 0.1rem 0.45rem;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            vertical-align: middle;
+            margin-left: 0.3rem;
+        }
+        .badge.ok    { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+        .badge.warn  { border-color: #ffa657; color: #ffa657; background: rgba(255,166,87,0.08); }
+        .badge.bad   { border-color: #ff7b72; color: #ff7b72; background: rgba(255,123,114,0.08); }
+
+    </style>
+</head>
+<body>
+
+<header class="hero">
+    <div class="series-label">NVIDIA GPU Architectures Series — Presentation 07</div>
+    <h1><span class="accent">Hopper</span> &mdash; H100, FP8, and the Transformer Engine</h1>
+    <p class="subtitle">The architecture that trained GPT-4-class frontier models. FP8 native tensor cores doubled compute over BF16; the Transformer Engine made FP8 actually usable; TMA, thread-block clusters, distributed shared memory and DPX rewrote the SM-level programming model.</p>
+
+    <div class="tags">
+        <span class="tag">H100</span><span class="tag">GH100</span><span class="tag">H200</span>
+        <span class="tag">FP8</span><span class="tag">Transformer Engine</span>
+        <span class="tag">TMA</span><span class="tag">Thread-Block Cluster</span>
+        <span class="tag">DSMEM</span><span class="tag">DPX</span><span class="tag">NVLink 4</span>
+    </div>
+
+    <div class="pipeline">
+        <span class="pipeline-step">GH100</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">SM</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">TC4</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">FP8</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">TMA</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Cluster</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">TE</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">NVLink 4</span>
+    </div>
+</header>
+
+<section class="slide" id="slide-00">
+    <div class="slide-number">00</div>
+    <h2>Topics We'll Cover</h2>
+    <p>A focused tour of NVIDIA's Hopper generation &mdash; the architecture that made FP8 a first-class citizen and turned the SM into something that looks more like a tile-streaming engine than a stack of warp lanes.</p>
+    <ul class="contents-list">
+        <li><a href="#slide-01">Hopper in One Page</a></li>
+        <li><a href="#slide-02">GH100 &mdash; The Die</a></li>
+        <li><a href="#slide-03">The Hopper SM</a></li>
+        <li><a href="#slide-04">4th-Gen Tensor Cores + FP8</a></li>
+        <li><a href="#slide-05">Transformer Engine &mdash; Software Magic for FP8</a></li>
+        <li><a href="#slide-06">TMA &mdash; Tensor Memory Accelerator</a></li>
+        <li><a href="#slide-07">Thread-Block Clusters + DSMEM</a></li>
+        <li><a href="#slide-08">DPX &mdash; Dynamic Programming Acceleration</a></li>
+        <li><a href="#slide-09">H100 Variants &mdash; SXM5, PCIe, NVL, H200, GH200</a></li>
+        <li><a href="#slide-10">Performance &mdash; Why H100 Changed Everything</a></li>
+        <li><a href="#slide-11">Interactive: Which Hopper for What?</a></li>
+    </ul>
+</section>
+
+<section class="slide" id="slide-01">
+    <div class="slide-number">01</div>
+    <h2>Hopper in One Page</h2>
+    <p>Hopper, named for Grace Hopper, is the first NVIDIA GPU with <strong>native FP8 tensor cores</strong>. That single change &mdash; together with the Transformer Engine that made FP8 usable without manually rescaling every layer &mdash; redefined what "frontier" meant. GPT-4-class models were trained on Hopper.</p>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Property</th><th>Value</th></tr></thead>
+            <tbody>
+                <tr><td>Process</td><td>TSMC 4N (custom 5 nm class)</td></tr>
+                <tr><td>Transistors</td><td>80 billion</td></tr>
+                <tr><td>Die area</td><td>814 mm&sup2;</td></tr>
+                <tr><td>Unveiled</td><td>March 2022 (GTC)</td></tr>
+                <tr><td>Volume availability</td><td>2023</td></tr>
+                <tr><td>Compute capability</td><td>9.0</td></tr>
+                <tr><td>Native low-precision</td><td>FP8 (E4M3 / E5M2), BF16, TF32, FP16</td></tr>
+                <tr><td>Launch SKUs</td><td>H100 SXM5 (700 W), H100 PCIe (350 W)</td></tr>
+                <tr><td>Refresh</td><td>H200 (mid-2024, HBM3e)</td></tr>
+                <tr><td>Superchip</td><td>GH200 = Grace CPU + Hopper GPU via NVLink-C2C</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Why it mattered</h4>
+            <p>More than doubled BF16 throughput per chip vs A100, then doubled <em>that</em> again with FP8. The Transformer Engine meant model authors didn't have to hand-roll FP8 scaling. Result: training a frontier-class transformer at 2&times;&ndash;3&times; the wall-clock speed of A100 at the same node count.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>What landed at the SM level</h4>
+            <p>TMA (asynchronous tile DMA), thread-block clusters (a new level of the launch hierarchy), distributed shared memory across blocks in a cluster (DSMEM), DPX dynamic-programming instructions, and warp-group MMA &mdash; the largest tile primitive NVIDIA had ever shipped.</p>
+        </div>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">The single sentence</div>
+        <p>Hopper is the first GPU where the <em>tensor core</em> stopped being a bolt-on and became the architectural centre, with the rest of the SM (TMA, clusters, DSMEM, async transactions) reorganised to keep that tensor core fed.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-02">
+    <div class="slide-number">02</div>
+    <h2>GH100 &mdash; The Die</h2>
+    <p>GH100 is the silicon under every H100 / H200 / GH200 SKU. Two perspectives below: the compute fabric and the memory subsystem. Yields and SKU binning mean none of the shipping products use the full die &mdash; the H100 enables 132 of 144 SMs, the H200 keeps the same compute config but swaps to denser memory.</p>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Compute fabric</h4>
+            <ul>
+                <li><strong>144 SMs total</strong>, 132 enabled on H100 SXM5</li>
+                <li><strong>8 GPCs</strong> &times; 9 TPCs each &times; 2 SMs (full die)</li>
+                <li><strong>60 TPCs</strong> on H100 SXM5 (after disable)</li>
+                <li><strong>18 432 FP32 CUDA cores</strong> (full die)</li>
+                <li><strong>528 4th-gen tensor cores</strong> (4 per SM)</li>
+                <li><strong>50 MB L2 cache</strong>, partitioned</li>
+                <li>2 video encoders (NVENC), 1 video decoder (NVDEC)</li>
+            </ul>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Memory subsystem</h4>
+            <ul>
+                <li><strong>H100</strong>: 5 active stacks of HBM3 (one disabled) &rarr; <strong>80 GB</strong> at <strong>3.35 TB/s</strong> (SXM5) or <strong>2 TB/s</strong> (PCIe)</li>
+                <li><strong>H100 NVL</strong>: special edition with <strong>94 GB</strong>, 3.9 TB/s &mdash; built for inference of larger models</li>
+                <li><strong>H200</strong>: 6 stacks of HBM3e &rarr; <strong>141 GB</strong> at <strong>4.8 TB/s</strong> &mdash; same GH100 die, denser memory</li>
+                <li>5120-bit HBM interface, ECC enabled by default</li>
+                <li>L2 acts as a giant on-chip staging buffer for tile-based kernels</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="canvas-wrap">
+        <svg viewBox="0 0 720 280" width="720" height="280" xmlns="http://www.w3.org/2000/svg">
+            <style>
+                .die  { fill: #161b22; stroke: #30363d; }
+                .gpc  { fill: rgba(118,185,0,0.18); stroke: #76B900; }
+                .l2   { fill: rgba(210,168,255,0.25); stroke: #d2a8ff; }
+                .hbm  { fill: rgba(255,166,87,0.25); stroke: #ffa657; }
+                .hbm-d{ fill: rgba(255,123,114,0.18); stroke: #ff7b72; stroke-dasharray: 3 3;}
+                .t    { fill: #e6edf3; font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+                .h    { fill: #76B900; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; }
+                .lbl  { fill: #8b949e; font-family: 'JetBrains Mono', monospace; font-size: 9px; }
+            </style>
+            <text x="10" y="18" class="h">GH100 floorplan &mdash; schematic only</text>
+
+            <!-- Die outline -->
+            <rect x="120" y="35" width="480" height="220" class="die"/>
+
+            <!-- HBM stacks left (3) -->
+            <rect x="40" y="45" width="70" height="55" class="hbm"/><text x="46" y="76" class="t">HBM3 #0</text>
+            <rect x="40" y="110" width="70" height="55" class="hbm"/><text x="46" y="141" class="t">HBM3 #1</text>
+            <rect x="40" y="175" width="70" height="55" class="hbm"/><text x="46" y="206" class="t">HBM3 #2</text>
+
+            <!-- HBM stacks right (3, one dashed = disabled on H100) -->
+            <rect x="610" y="45" width="70" height="55" class="hbm"/><text x="616" y="76" class="t">HBM3 #3</text>
+            <rect x="610" y="110" width="70" height="55" class="hbm"/><text x="616" y="141" class="t">HBM3 #4</text>
+            <rect x="610" y="175" width="70" height="55" class="hbm-d"/><text x="616" y="200" class="t">HBM #5</text><text x="616" y="216" class="lbl">disabled</text>
+
+            <!-- L2 in middle -->
+            <rect x="320" y="115" width="80" height="60" class="l2"/><text x="332" y="145" class="t">L2 50 MB</text><text x="332" y="160" class="lbl">partitioned</text>
+
+            <!-- 8 GPCs -->
+            <g>
+                <rect x="135" y="50" width="80" height="55" class="gpc"/><text x="142" y="73" class="t">GPC0</text><text x="142" y="88" class="lbl">9 TPC / 18 SM</text>
+                <rect x="220" y="50" width="80" height="55" class="gpc"/><text x="227" y="73" class="t">GPC1</text><text x="227" y="88" class="lbl">9 TPC / 18 SM</text>
+                <rect x="405" y="50" width="80" height="55" class="gpc"/><text x="412" y="73" class="t">GPC2</text><text x="412" y="88" class="lbl">9 TPC / 18 SM</text>
+                <rect x="490" y="50" width="80" height="55" class="gpc"/><text x="497" y="73" class="t">GPC3</text><text x="497" y="88" class="lbl">9 TPC / 18 SM</text>
+
+                <rect x="135" y="180" width="80" height="55" class="gpc"/><text x="142" y="203" class="t">GPC4</text><text x="142" y="218" class="lbl">9 TPC / 18 SM</text>
+                <rect x="220" y="180" width="80" height="55" class="gpc"/><text x="227" y="203" class="t">GPC5</text><text x="227" y="218" class="lbl">9 TPC / 18 SM</text>
+                <rect x="405" y="180" width="80" height="55" class="gpc"/><text x="412" y="203" class="t">GPC6</text><text x="412" y="218" class="lbl">9 TPC / 18 SM</text>
+                <rect x="490" y="180" width="80" height="55" class="gpc"/><text x="497" y="203" class="t">GPC7</text><text x="497" y="218" class="lbl">9 TPC / 18 SM</text>
+            </g>
+
+            <!-- bottom strip: NVLink + PCIe -->
+            <rect x="135" y="240" width="220" height="14" fill="#30363d" stroke="#21262d"/><text x="142" y="251" class="t">NVLink 4 (18 links, 900 GB/s aggregate)</text>
+            <rect x="365" y="240" width="220" height="14" fill="#30363d" stroke="#21262d"/><text x="372" y="251" class="t">PCIe 5 x16 + multi-instance front-end</text>
+
+            <text x="120" y="275" class="lbl">Full die: 144 SMs / 18432 FP32 cores / 528 tensor cores. H100 enables 132 SMs / 60 TPCs.</text>
+        </svg>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">SKU footnote</div>
+        <p>Same die powers everything Hopper-branded. The H100 NVL is two H100 PCIe boards bridged with NVLink and binned for higher VRAM (94 GB each); it was launched specifically because Llama-2-70B FP16 wouldn't fit on a stock 80 GB H100. The H200 is a die-identical refresh whose news is entirely the HBM3e upgrade.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-03">
+    <div class="slide-number">03</div>
+    <h2>The Hopper SM</h2>
+    <p>The Hopper SM keeps the Ampere-style four-partition layout but adds a pile of new fixed-function units. The headline isn't another increment in CUDA cores &mdash; it's that almost everything <em>around</em> the cores has been redesigned for asynchronous, tile-based execution.</p>
+
+    <div class="canvas-wrap">
+        <svg viewBox="0 0 720 360" width="720" height="360" xmlns="http://www.w3.org/2000/svg">
+            <style>
+                .sm   { fill: #161b22; stroke: #30363d; }
+                .part { fill: rgba(165,214,255,0.10); stroke: #a5d6ff; }
+                .fp32 { fill: rgba(118,185,0,0.25); stroke: #76B900; }
+                .int  { fill: rgba(210,168,255,0.18); stroke: #d2a8ff; }
+                .fp64 { fill: rgba(255,166,87,0.18); stroke: #ffa657; }
+                .tc   { fill: rgba(255,123,114,0.30); stroke: #ff7b72; }
+                .ldst { fill: rgba(165,214,255,0.18); stroke: #a5d6ff; }
+                .new  { fill: rgba(118,185,0,0.40); stroke: #76B900; }
+                .sh   { fill: rgba(210,168,255,0.18); stroke: #d2a8ff; }
+                .t    { fill: #e6edf3; font-family: 'JetBrains Mono', monospace; font-size: 9px; }
+                .h    { fill: #76B900; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; }
+                .lbl  { fill: #8b949e; font-family: 'JetBrains Mono', monospace; font-size: 9px; }
+                .lh   { fill: #e6edf3; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 11px; }
+            </style>
+            <text x="10" y="18" class="h">Hopper SM &mdash; 4 partitions, new asynchronous units, 256 KB unified L1+SMEM</text>
+
+            <rect x="20" y="30" width="680" height="320" class="sm"/>
+
+            <!-- 4 partitions -->
+            <g>
+                <rect x="30" y="40" width="160" height="180" class="part"/><text x="35" y="55" class="lh">Partition 0</text>
+                <rect x="40" y="65" width="60" height="20" class="fp32"/><text x="44" y="79" class="t">32× FP32</text>
+                <rect x="105" y="65" width="55" height="20" class="int"/><text x="110" y="79" class="t">16× INT32</text>
+                <rect x="40" y="90" width="60" height="20" class="fp64"/><text x="44" y="104" class="t">16× FP64</text>
+                <rect x="105" y="90" width="55" height="20" class="tc"/><text x="110" y="104" class="t">TC4 (1)</text>
+                <rect x="40" y="115" width="120" height="20" class="ldst"/><text x="44" y="129" class="t">4× LD/ST + tex</text>
+                <rect x="40" y="140" width="120" height="20" class="sh"/><text x="44" y="154" class="t">Warp scheduler / 64 KB regs</text>
+                <rect x="40" y="165" width="120" height="20" class="sh"/><text x="44" y="179" class="t">L0 i-cache + dispatch</text>
+            </g>
+            <g>
+                <rect x="200" y="40" width="160" height="180" class="part"/><text x="205" y="55" class="lh">Partition 1</text>
+                <rect x="210" y="65" width="60" height="20" class="fp32"/><text x="214" y="79" class="t">32× FP32</text>
+                <rect x="275" y="65" width="55" height="20" class="int"/><text x="280" y="79" class="t">16× INT32</text>
+                <rect x="210" y="90" width="60" height="20" class="fp64"/><text x="214" y="104" class="t">16× FP64</text>
+                <rect x="275" y="90" width="55" height="20" class="tc"/><text x="280" y="104" class="t">TC4 (1)</text>
+                <rect x="210" y="115" width="120" height="20" class="ldst"/><text x="214" y="129" class="t">4× LD/ST + tex</text>
+                <rect x="210" y="140" width="120" height="20" class="sh"/><text x="214" y="154" class="t">Warp scheduler / 64 KB regs</text>
+                <rect x="210" y="165" width="120" height="20" class="sh"/><text x="214" y="179" class="t">L0 i-cache + dispatch</text>
+            </g>
+            <g>
+                <rect x="370" y="40" width="160" height="180" class="part"/><text x="375" y="55" class="lh">Partition 2</text>
+                <rect x="380" y="65" width="60" height="20" class="fp32"/><text x="384" y="79" class="t">32× FP32</text>
+                <rect x="445" y="65" width="55" height="20" class="int"/><text x="450" y="79" class="t">16× INT32</text>
+                <rect x="380" y="90" width="60" height="20" class="fp64"/><text x="384" y="104" class="t">16× FP64</text>
+                <rect x="445" y="90" width="55" height="20" class="tc"/><text x="450" y="104" class="t">TC4 (1)</text>
+                <rect x="380" y="115" width="120" height="20" class="ldst"/><text x="384" y="129" class="t">4× LD/ST + tex</text>
+                <rect x="380" y="140" width="120" height="20" class="sh"/><text x="384" y="154" class="t">Warp scheduler / 64 KB regs</text>
+                <rect x="380" y="165" width="120" height="20" class="sh"/><text x="384" y="179" class="t">L0 i-cache + dispatch</text>
+            </g>
+            <g>
+                <rect x="540" y="40" width="160" height="180" class="part"/><text x="545" y="55" class="lh">Partition 3</text>
+                <rect x="550" y="65" width="60" height="20" class="fp32"/><text x="554" y="79" class="t">32× FP32</text>
+                <rect x="615" y="65" width="55" height="20" class="int"/><text x="620" y="79" class="t">16× INT32</text>
+                <rect x="550" y="90" width="60" height="20" class="fp64"/><text x="554" y="104" class="t">16× FP64</text>
+                <rect x="615" y="90" width="55" height="20" class="tc"/><text x="620" y="104" class="t">TC4 (1)</text>
+                <rect x="550" y="115" width="120" height="20" class="ldst"/><text x="554" y="129" class="t">4× LD/ST + tex</text>
+                <rect x="550" y="140" width="120" height="20" class="sh"/><text x="554" y="154" class="t">Warp scheduler / 64 KB regs</text>
+                <rect x="550" y="165" width="120" height="20" class="sh"/><text x="554" y="179" class="t">L0 i-cache + dispatch</text>
+            </g>
+
+            <!-- shared row -->
+            <rect x="30" y="230" width="670" height="30" class="sh"/>
+            <text x="40" y="250" class="t">256 KB unified L1 / shared memory (carveable). 64-bit shared atomics.</text>
+
+            <!-- new units highlighted -->
+            <rect x="30" y="270" width="160" height="35" class="new"/><text x="38" y="289" class="t">TMA</text><text x="38" y="301" class="lbl">async tile DMA</text>
+            <rect x="200" y="270" width="160" height="35" class="new"/><text x="208" y="289" class="t">DSMEM router</text><text x="208" y="301" class="lbl">cross-block SMEM</text>
+            <rect x="370" y="270" width="160" height="35" class="new"/><text x="378" y="289" class="t">DPX</text><text x="378" y="301" class="lbl">min/max+add for DP</text>
+            <rect x="540" y="270" width="160" height="35" class="new"/><text x="548" y="289" class="t">Async transaction barriers</text>
+
+            <text x="40" y="328" class="lh">New in Hopper</text>
+            <text x="40" y="343" class="lbl">TMA + Cluster + DSMEM + DPX + WGMMA + async-transaction mbarrier semantics</text>
+        </svg>
+    </div>
+
+    <h3>What's actually new vs Ampere</h3>
+    <ul>
+        <li><strong>Tensor core</strong>: 4th gen, native FP8 + WGMMA (warp-group MMA on 64&times;N&times;K tiles, larger than any prior MMA).</li>
+        <li><strong>TMA</strong>: hardware unit that copies multi-D tiles between L2/HBM and shared memory asynchronously, freeing threads from issuing global loads.</li>
+        <li><strong>Thread-block clusters</strong>: a new launch-hierarchy level above the block; up to 16 blocks co-scheduled on one GPC.</li>
+        <li><strong>DSMEM</strong>: blocks within a cluster can access each other's shared memory directly at L1-class latency.</li>
+        <li><strong>DPX</strong>: hardware <code>min/max+add</code> instructions for dynamic-programming patterns (Smith-Waterman, beam search).</li>
+        <li><strong>Async transaction barriers</strong>: new <code>mbarrier</code> states that decouple "data arrived" from "all threads ready", enabling deeper overlap.</li>
+        <li>256 KB combined L1+shared, configurable carve-out (vs 192 KB on Ampere). 64 KB register file per partition (unchanged).</li>
+    </ul>
+</section>
+
+<section class="slide" id="slide-04">
+    <div class="slide-number">04</div>
+    <h2>4th-Gen Tensor Cores + FP8</h2>
+    <p>The headline numerical change in Hopper is <strong>native FP8</strong>. Two 8-bit float formats are supported, chosen so that one favours mantissa precision and the other favours dynamic range. They share an exponent bias and convert losslessly to/from FP16/BF16.</p>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>E4M3 &mdash; precision-leaning</h4>
+            <ul>
+                <li>1 sign + <strong>4 exponent</strong> + <strong>3 mantissa</strong> bits</li>
+                <li>Range: ~&plusmn;448 (with NaN at the top)</li>
+                <li>Used for <strong>weights and activations</strong> after per-tensor scaling</li>
+                <li>Higher mantissa &rarr; better numerical fidelity in the quantised matmul</li>
+            </ul>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>E5M2 &mdash; range-leaning</h4>
+            <ul>
+                <li>1 sign + <strong>5 exponent</strong> + <strong>2 mantissa</strong> bits</li>
+                <li>Range: ~&plusmn;57 344</li>
+                <li>Used for <strong>gradients</strong> (which span many orders of magnitude)</li>
+                <li>Higher exponent &rarr; survives backward-pass dynamic range</li>
+            </ul>
+        </div>
+    </div>
+
+    <h3>Throughput on H100 SXM5</h3>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Format</th><th>Dense TFLOPS</th><th>Sparse (2:4) TFLOPS</th><th>vs FP16</th></tr></thead>
+            <tbody>
+                <tr><td>FP64 (tensor core)</td><td>67</td><td>&mdash;</td><td>0.07&times;</td></tr>
+                <tr><td>TF32</td><td>495</td><td>989</td><td>0.5&times;</td></tr>
+                <tr><td>FP16 / BF16</td><td>989</td><td>1979</td><td>1.0&times; (ref)</td></tr>
+                <tr><td><strong>FP8 (E4M3 / E5M2)</strong></td><td><strong>1979</strong></td><td><strong>3958</strong></td><td><strong>2.0&times;</strong></td></tr>
+                <tr><td>INT8</td><td>1979</td><td>3958</td><td>2.0&times;</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3>WGMMA &mdash; warp-group MMA</h3>
+    <p>The PTX instruction is <code>wgmma.mma_async.sync.aligned.m64nNkK</code>. A <em>warp group</em> (4 warps = 128 threads) collectively issues a single MMA over a <strong>64&times;N&times;K tile</strong>, with N up to 256. This is far larger than Ampere's <code>m16n8k16</code> MMA &mdash; one instruction now drives a much larger fraction of the matmul. The <code>async</code> suffix is the key: the tensor core proceeds in the background while the warp group does other work (e.g. issues the next TMA or accumulates the previous tile).</p>
+
+    <div class="code-block">
+        <div class="code-header">PTX shape comparison: Ampere vs Hopper</div>
+        <pre><code><span class="cm">// Ampere FP16: one warp issues a 16×8×16 tile, blocking-ish</span>
+<span class="kw">mma.sync.aligned.m16n8k16</span>.row.col.f32.f16.f16.f32  d, a, b, c;
+
+<span class="cm">// Hopper FP8: a warp-group (4 warps) issues a 64×128×32 tile, async</span>
+<span class="kw">wgmma.mma_async.sync.aligned.m64n128k32</span>.f32.e4m3.e4m3  d, a-desc, b-desc, scaleD;
+<span class="kw">wgmma.commit_group.sync</span>;
+<span class="kw">wgmma.wait_group.sync</span>  <span class="num">0</span>;     <span class="cm">// drain when needed</span></code></pre>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Why "async" matters</div>
+        <p>On Ampere the MMA was effectively synchronous in software terms: the warp had to feed it operands and wait for the result before issuing the next. On Hopper, WGMMA is a fire-and-forget tile job; while one tile crunches, the warp group can issue a TMA for the next tile, accumulate the previous one, or store partial sums. CUTLASS 3.x and the Transformer Engine kernels are entirely structured around this overlap.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-05">
+    <div class="slide-number">05</div>
+    <h2>Transformer Engine &mdash; Software Magic for FP8</h2>
+    <p>FP8 has only ~256 representable values. Naively casting a transformer's activations to FP8 destroys accuracy unless every tensor is <strong>scaled</strong> into FP8's narrow dynamic range, then unscaled back. The Transformer Engine (TE) is the open-source library that does this for you.</p>
+
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Before TE &mdash; the manual way</h4>
+            <ul>
+                <li>Author writes custom CUDA kernels per layer</li>
+                <li>Track activation max per tensor; recompute every step</li>
+                <li>Pick E4M3 vs E5M2 by hand for fwd vs bwd</li>
+                <li>Insert <code>cast_to_fp8 / cast_from_fp8</code> around every matmul</li>
+                <li>Re-tune scale factors when the model changes</li>
+                <li>Easy to lose &gt;1 perplexity point through bad scaling</li>
+            </ul>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>With TE &mdash; the automatic way</h4>
+            <ul>
+                <li>Replace <code>nn.Linear</code> with <code>te.Linear</code></li>
+                <li>Wrap the forward in <code>fp8_autocast(...)</code></li>
+                <li>TE tracks per-tensor amax history, computes scale</li>
+                <li>Picks E4M3 for activations/weights, E5M2 for gradients</li>
+                <li>"Delayed scaling" reuses the previous step's amax to avoid stalls</li>
+                <li>Drops in to PyTorch, JAX, NeMo, Megatron-LM, DeepSpeed</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">PyTorch: enable FP8 on a transformer block in three lines</div>
+        <pre><code><span class="kw">import</span> transformer_engine.pytorch <span class="kw">as</span> te
+<span class="kw">from</span> transformer_engine.common <span class="kw">import</span> recipe
+
+fp8_recipe = recipe.<span class="fn">DelayedScaling</span>(
+    margin=<span class="num">0</span>, interval=<span class="num">1</span>,
+    fp8_format=recipe.Format.HYBRID,    <span class="cm"># E4M3 fwd, E5M2 bwd</span>
+    amax_history_len=<span class="num">16</span>, amax_compute_algo=<span class="str">"max"</span>,
+)
+
+<span class="cm"># Replace nn.Linear with te.Linear &mdash; same API, FP8 internals</span>
+<span class="kw">class</span> <span class="type">Block</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, d):
+        super().<span class="fn">__init__</span>()
+        self.fc1 = te.<span class="fn">Linear</span>(d, <span class="num">4</span>*d, bias=<span class="kw">True</span>)
+        self.fc2 = te.<span class="fn">Linear</span>(<span class="num">4</span>*d, d, bias=<span class="kw">True</span>)
+
+<span class="cm"># Wrap the forward; everything between is FP8-accelerated</span>
+<span class="kw">with</span> te.<span class="fn">fp8_autocast</span>(enabled=<span class="kw">True</span>, fp8_recipe=fp8_recipe):
+    out = block(x)
+    loss = out.<span class="fn">sum</span>()
+loss.<span class="fn">backward</span>()                       <span class="cm"># grads computed in E5M2 path</span></code></pre>
+    </div>
+
+    <h3>Delayed scaling &mdash; the trick that hides the rescale stall</h3>
+    <p>"Online" scaling would have to read the activation, compute its max, broadcast that max, then scale &mdash; a multi-pass dependency on every tensor. <strong>Delayed scaling</strong> instead remembers a short rolling history of recent amax values per tensor (default 16 steps), takes the running max, and uses <em>that</em> to scale the next forward pass. The cost is one stale step at start-up; the win is no synchronisation barrier in the hot path.</p>
+
+    <div class="callout">
+        <div class="callout-label">Production status</div>
+        <p>TE ships with NVIDIA's NGC PyTorch and JAX containers, and is integrated into NeMo, Megatron-LM, MaxText, Hugging Face Accelerate, and (for inference) vLLM and TensorRT-LLM. For most modern transformer architectures (Llama, Mixtral, Qwen, GPT-OSS) it gives <em>BF16 accuracy at FP8 throughput</em> with no model changes &mdash; the headline reason H100 doubled real-world training speed over A100.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-06">
+    <div class="slide-number">06</div>
+    <h2>TMA &mdash; Tensor Memory Accelerator</h2>
+    <p>Before Hopper, every thread that participated in a tile-based matmul also had to participate in <em>loading</em> that tile from global memory: address arithmetic, predication, vectorised LDG, register pressure. That overhead competed with the tensor cores for issue slots and consumed registers and ALU bandwidth. TMA removes it.</p>
+
+    <h3>What it is</h3>
+    <ul>
+        <li><strong>A dedicated copy engine inside each SM</strong> that moves multi-dimensional tiles between L2/HBM and shared memory based on a <em>tensor map</em> descriptor.</li>
+        <li>The descriptor is a small structure encoding base pointer, tile shape (up to 5D), strides, swizzle pattern, OOB handling, and L2 hint.</li>
+        <li>An SM submits <em>one</em> instruction (<code>cp.async.bulk.tensor</code>) and the TMA does the rest asynchronously.</li>
+        <li>Completion is signalled via an <code>mbarrier</code> with transaction-count semantics &mdash; the consuming threads wait until all the tile bytes have arrived.</li>
+    </ul>
+
+    <div class="canvas-wrap">
+        <svg viewBox="0 0 720 240" width="720" height="240" xmlns="http://www.w3.org/2000/svg">
+            <style>
+                .blk  { fill: #161b22; stroke: #30363d; }
+                .smem { fill: rgba(118,185,0,0.20); stroke: #76B900; }
+                .l2   { fill: rgba(210,168,255,0.20); stroke: #d2a8ff; }
+                .hbm  { fill: rgba(255,166,87,0.20); stroke: #ffa657; }
+                .tma  { fill: rgba(118,185,0,0.40); stroke: #76B900; }
+                .arr  { stroke: #76B900; stroke-width: 2; fill: none; marker-end: url(#ah); }
+                .arr2 { stroke: #ff7b72; stroke-width: 2; fill: none; marker-end: url(#ah2); stroke-dasharray: 4 3;}
+                .t    { fill: #e6edf3; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+                .h    { fill: #76B900; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; }
+                .lbl  { fill: #8b949e; font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+            </style>
+            <defs>
+                <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                    <path d="M0,0 L10,5 L0,10 Z" fill="#76B900"/>
+                </marker>
+                <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                    <path d="M0,0 L10,5 L0,10 Z" fill="#ff7b72"/>
+                </marker>
+            </defs>
+
+            <text x="10" y="18" class="h">TMA flow &mdash; one tile request, asynchronous bulk fill</text>
+
+            <!-- HBM -->
+            <rect x="20" y="40" width="120" height="160" class="hbm"/>
+            <text x="35" y="65" class="t">HBM3</text>
+            <text x="35" y="80" class="lbl">global memory</text>
+            <text x="35" y="100" class="lbl">[N×K matrix]</text>
+
+            <!-- L2 -->
+            <rect x="170" y="40" width="120" height="160" class="l2"/>
+            <text x="190" y="65" class="t">L2 50 MB</text>
+            <text x="190" y="80" class="lbl">tiles cached here</text>
+
+            <!-- TMA unit -->
+            <rect x="320" y="80" width="120" height="80" class="tma"/>
+            <text x="345" y="115" class="t">TMA</text>
+            <text x="335" y="135" class="lbl">tensor map +</text>
+            <text x="335" y="150" class="lbl">descriptor engine</text>
+
+            <!-- shared memory -->
+            <rect x="470" y="40" width="160" height="160" class="smem"/>
+            <text x="485" y="65" class="t">SMEM (256 KB)</text>
+            <text x="485" y="80" class="lbl">tile A, tile B,</text>
+            <text x="485" y="95" class="lbl">double-buffered</text>
+
+            <!-- TMA load arrows -->
+            <path d="M140 100 L320 100" class="arr"/>
+            <path d="M290 130 L320 130" class="arr"/>
+            <path d="M440 120 L470 120" class="arr"/>
+            <text x="200" y="115" class="lbl">bulk read</text>
+            <text x="478" y="180" class="lbl">arrive on mbarrier</text>
+
+            <!-- single instruction from SM -->
+            <rect x="490" y="210" width="180" height="20" fill="#161b22" stroke="#30363d"/>
+            <text x="495" y="225" class="lbl">one cp.async.bulk.tensor inst</text>
+            <path d="M580 210 L380 160" class="arr2"/>
+        </svg>
+    </div>
+
+    <div class="code-block">
+        <div class="code-header">CUDA C++: the kernel side, sketched</div>
+        <pre><code><span class="cm">// Build a tensor map once on the host</span>
+CUtensorMap tmap_a;
+<span class="fn">cuTensorMapEncodeTiled</span>(&amp;tmap_a, CU_TENSOR_MAP_DATA_TYPE_FLOAT8_E4M3,
+    <span class="num">2</span>, dev_a, dim, stride, box, elem_stride,
+    CU_TENSOR_MAP_INTERLEAVE_NONE, CU_TENSOR_MAP_SWIZZLE_128B,
+    CU_TENSOR_MAP_L2_PROMOTION_L2_128B, CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
+
+<span class="cm">// In the kernel: one warp issues the TMA load</span>
+__shared__ alignas(<span class="num">128</span>) <span class="type">__nv_fp8_e4m3</span> sA[<span class="num">128</span>][<span class="num">64</span>];
+__shared__ <span class="kw">uint64_t</span> bar;
+<span class="kw">if</span> (threadIdx.x == <span class="num">0</span>) {
+    <span class="fn">cde::cp_async_bulk_tensor_2d_global_to_shared</span>(&amp;sA, &amp;tmap_a, ki*<span class="num">64</span>, mi*<span class="num">128</span>, &amp;bar);
+    <span class="fn">cde::cp_async_bulk_commit_group</span>();
+}
+<span class="fn">cde::cp_async_bulk_wait_group</span>&lt;<span class="num">0</span>&gt;();   <span class="cm">// or wait on bar with mbarrier</span>
+<span class="cm">// sA is now populated; warp group can WGMMA on it.</span></code></pre>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">The architectural consequence</div>
+        <p>With TMA, kernels become <em>almost pure compute</em>: threads issue one TMA, wait on a barrier, run WGMMA, repeat. Address generation, predication, and global LDG are gone from the inner loop. CUTLASS 3.x's Hopper kernels run with double-buffered TMA prefetch hidden under WGMMA, achieving &gt;80% of theoretical FP8 throughput on dense matmul shapes.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-07">
+    <div class="slide-number">07</div>
+    <h2>Thread-Block Clusters + DSMEM</h2>
+    <p>Hopper adds a new level to the launch hierarchy. Before Hopper, the levels were Grid &rarr; Block &rarr; Warp &rarr; Thread, with the SM as the natural hardware boundary: blocks ran on one SM, no SM-to-SM cooperation existed except via global memory. Hopper inserts a <strong>Cluster</strong> level above the block.</p>
+
+    <div class="hierarchy">
+        <div class="hierarchy-level">
+            <div class="hierarchy-label">Grid</div>
+            <div class="hierarchy-items"><div class="hierarchy-item">whole kernel launch &mdash; many clusters</div></div>
+        </div>
+        <div class="hierarchy-level">
+            <div class="hierarchy-label">Cluster</div>
+            <div class="hierarchy-items">
+                <div class="hierarchy-item accent">block 0</div>
+                <div class="hierarchy-item accent">block 1</div>
+                <div class="hierarchy-item accent">block 2</div>
+                <div class="hierarchy-item accent">…</div>
+                <div class="hierarchy-item accent">block 15</div>
+            </div>
+        </div>
+        <div class="hierarchy-level">
+            <div class="hierarchy-label">Block</div>
+            <div class="hierarchy-items"><div class="hierarchy-item">warp 0</div><div class="hierarchy-item">warp 1</div><div class="hierarchy-item">…</div><div class="hierarchy-item">warp 31</div></div>
+        </div>
+        <div class="hierarchy-level">
+            <div class="hierarchy-label">Warp</div>
+            <div class="hierarchy-items"><div class="hierarchy-item">32 threads</div></div>
+        </div>
+    </div>
+
+    <h3>Co-scheduling &amp; DSMEM</h3>
+    <ul>
+        <li>A cluster contains up to <strong>16 blocks</strong> (8 portable, 16 with opt-in).</li>
+        <li>All blocks of a cluster are guaranteed to be <strong>co-resident on a single GPC</strong> &mdash; the GPC's local crossbar is the substrate for cross-block traffic.</li>
+        <li>Cluster blocks can read and write each other's shared memory directly using <strong>DSMEM</strong> (Distributed Shared Memory).</li>
+        <li>DSMEM access goes through the GPC's switch fabric &mdash; latency comparable to L1, much lower than going to L2 or HBM.</li>
+        <li>Cluster-wide barriers (<code>cluster.sync()</code>) and atomic ops are provided.</li>
+    </ul>
+
+    <div class="code-block">
+        <div class="code-header">CUDA C++: declare a cluster + use DSMEM</div>
+        <pre><code><span class="cm">// Compile-time cluster shape, opt-in launch attribute</span>
+<span class="dir">__cluster_dims__</span>(<span class="num">2</span>, <span class="num">2</span>, <span class="num">1</span>)        <span class="cm">// 4 blocks per cluster</span>
+<span class="dir">__global__</span> <span class="kw">void</span> <span class="fn">matmul_cluster</span>(<span class="kw">const</span> <span class="type">half</span>* A, <span class="kw">const</span> <span class="type">half</span>* B, <span class="type">float</span>* C) {
+    <span class="kw">namespace</span> cg = cooperative_groups;
+    <span class="kw">auto</span> cluster = cg::<span class="fn">this_cluster</span>();
+    <span class="type">__shared__</span> <span class="type">half</span> tile[<span class="num">128</span>][<span class="num">64</span>];
+
+    <span class="cm">// Each block loads its own slice via TMA into its own SMEM</span>
+    <span class="fn">tma_load_my_slice</span>(tile);
+
+    <span class="fn">cluster.sync</span>();                        <span class="cm">// all blocks have their slice</span>
+
+    <span class="cm">// Read peer block's tile via DSMEM &mdash; one pointer cast away</span>
+    <span class="type">half</span>* peer_tile = cluster.<span class="fn">map_shared_rank</span>(tile, <span class="num">1</span>);
+    <span class="cm">// peer_tile lives on another SM; load latency is L1-ish, no HBM hop.</span>
+}</code></pre>
+    </div>
+
+    <h3>Practical use &mdash; collaborative matmul</h3>
+    <p>The CUTLASS 3.x and cuDNN 9 GEMM kernels split a large output tile across cluster blocks. Each block holds a slice of the working tile and exchanges tile <em>edges</em> with its cluster neighbours via DSMEM as the K-loop progresses. Because peer SMEM reads stay inside the GPC, this avoids the L2 round-trip an Ampere kernel would need for the same data. Net effect: more on-chip bandwidth available to the tensor cores, larger effective tile sizes, better arithmetic intensity.</p>
+
+    <div class="callout">
+        <div class="callout-label">Why "GPC-local"?</div>
+        <p>Cross-GPC SM-to-SM traffic would have to traverse the global crossbar &mdash; that's L2 latency, no different from going through cache. By restricting clusters to a single GPC, NVIDIA gets DSMEM at L1-class latency essentially for free. The price is a hard cap: clusters can't be larger than one GPC's worth of SMs (18 in the full die), hence the 16-block limit.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-08">
+    <div class="slide-number">08</div>
+    <h2>DPX &mdash; Dynamic Programming Acceleration</h2>
+    <p>The smallest of Hopper's headline features but the most domain-specific. DPX adds a family of fused <strong>min/max + add</strong> instructions that cover the inner loop of dynamic-programming algorithms. The canonical examples are not LLM workloads at all &mdash; they are bioinformatics and graph algorithms.</p>
+
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Instruction class</th><th>Computes</th><th>Used in</th></tr></thead>
+            <tbody>
+                <tr><td><code>vimax3</code> / <code>vimin3</code></td><td>3-way SIMD min/max on packed int16/int32</td><td>Smith-Waterman, Needleman-Wunsch (genomics)</td></tr>
+                <tr><td><code>viaddmax</code> / <code>viaddmin</code></td><td>(a + b) compared against c, returning min/max</td><td>Floyd-Warshall (all-pairs shortest path)</td></tr>
+                <tr><td><code>vimax3 + viaddmax</code></td><td>fused gap-affine alignment recurrence</td><td>protein alignment, beam search in RL trees</td></tr>
+                <tr><td><code>vibmax</code> / <code>vibmin</code></td><td>min/max with index-bit return</td><td>traceback paths in dynamic programming</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3>What it actually wins you</h3>
+    <ul>
+        <li>NVIDIA quotes <strong>up to 7&times; speedup</strong> for Smith-Waterman gap-affine alignment vs an A100 implementation; ~5&times; for Floyd-Warshall on dense graphs.</li>
+        <li>The exposed API lives in <code>&lt;cuda/std/__bit/dpx&gt;</code> (CUDA 12+) and in cuOpt / NVIDIA Parabricks / NCCL collective gather paths.</li>
+        <li>For LLM training and inference, DPX is essentially unused &mdash; it's a marketing-relevant feature for the biotech and HPC verticals NVIDIA also wanted to capture.</li>
+        <li>Beam search in classical decoding does benefit; for transformer decoding with KV cache it's irrelevant.</li>
+    </ul>
+
+    <div class="code-block">
+        <div class="code-header">CUDA C++: a DPX-accelerated Smith-Waterman cell</div>
+        <pre><code><span class="cm">// Gap-affine recurrence, one diagonal cell, traditional form:</span>
+<span class="cm">//   H[i,j] = max( H[i-1,j-1] + s(a,b),  E[i,j],  F[i,j],  0 )</span>
+<span class="cm">// E[i,j] = max( H[i,j-1] - g_open,  E[i,j-1] - g_extend )</span>
+<span class="cm">// F[i,j] = max( H[i-1,j] - g_open,  F[i-1,j] - g_extend )</span>
+<span class="kw">int</span> h = __viaddmax_s32(H_diag, score_match, <span class="num">0</span>);    <span class="cm">// (H_diag + s) ↑ 0</span>
+h     = __vimax3_s32(h, E_left, F_up);                       <span class="cm">// 3-way max in 1 inst</span>
+<span class="kw">int</span> e = __viaddmax_s32(H_left, -g_open, E_left - g_extend);
+<span class="kw">int</span> f = __viaddmax_s32(H_up,   -g_open, F_up   - g_extend);
+H[i][j] = h; E[i][j] = e; F[i][j] = f;</code></pre>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">Why mention it on an LLM-adjacent deck</div>
+        <p>DPX is one of those features that fills the marketing slides at GTC and disappears from the working-set vocabulary three months later. It's worth knowing exists because (a) the A100 lacks it &mdash; a real reason to choose H100 in genomics, (b) future architectures inherit it, and (c) it explains a chunk of die area that would otherwise be unaccounted for in SM diagrams.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-09">
+    <div class="slide-number">09</div>
+    <h2>H100 Variants &mdash; SXM5, PCIe, NVL, H200, GH200</h2>
+    <p>"Hopper" on its own doesn't tell you what's actually in the box. The same GH100 silicon ships in five very different products with widely different memory, power, and link configurations. Pick wrong and you discover at deploy time that NVLink isn't there, or that bandwidth is half what you thought.</p>
+
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>SKU</th><th>VRAM</th><th>BW (TB/s)</th><th>TDP (W)</th><th>NVLink</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>H100 SXM5</strong></td>
+                    <td>80 GB HBM3</td>
+                    <td>3.35</td>
+                    <td>700</td>
+                    <td>NVLink 4 / NVSwitch (900 GB/s)</td>
+                    <td>HGX baseboard. 8&times; in DGX H100. The default training SKU.</td>
+                </tr>
+                <tr>
+                    <td><strong>H100 PCIe</strong></td>
+                    <td>80 GB HBM3</td>
+                    <td>2.0</td>
+                    <td>350</td>
+                    <td>NVLink bridge (2-card)</td>
+                    <td>Standard PCIe slot, half the BW, no NVSwitch fabric. For mixed servers.</td>
+                </tr>
+                <tr>
+                    <td><strong>H100 NVL</strong></td>
+                    <td>94 GB HBM3</td>
+                    <td>3.9</td>
+                    <td>2 &times; 350</td>
+                    <td>Paired NVLink between the two boards</td>
+                    <td>Special edition; sized so Llama-2-70B FP16 fits in one paired slot.</td>
+                </tr>
+                <tr>
+                    <td><strong>H200 SXM5</strong></td>
+                    <td>141 GB HBM3e</td>
+                    <td>4.8</td>
+                    <td>700</td>
+                    <td>NVLink 4 / NVSwitch</td>
+                    <td>Same die as H100. Drops into HGX boards with firmware update.</td>
+                </tr>
+                <tr>
+                    <td><strong>GH200</strong></td>
+                    <td>96 GB HBM3 + 480 GB LPDDR5x</td>
+                    <td>4.0 (HBM) + 0.5 (LPDDR)</td>
+                    <td>~1000 module</td>
+                    <td>NVLink-C2C 900 GB/s to Grace CPU</td>
+                    <td>Grace + Hopper superchip; LPDDR5x exposed as Extended GPU Memory.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h3>DGX H100 &mdash; the reference node</h3>
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>Compute</h4>
+            <ul>
+                <li><strong>8&times; H100 SXM5</strong> on an HGX baseboard</li>
+                <li><strong>4&times; NVSwitch 3</strong> &mdash; full all-to-all NVLink fabric</li>
+                <li>Every GPU sees every other at full 900 GB/s NVLink 4</li>
+                <li>2&times; Intel Xeon Platinum (later Sapphire Rapids); some configs Grace via GH200 nodes</li>
+            </ul>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Network</h4>
+            <ul>
+                <li><strong>8&times; ConnectX-7</strong> NICs at 400 Gb/s each (NDR InfiniBand or 400 GbE)</li>
+                <li>One NIC per GPU &rarr; GPUDirect RDMA per GPU &rarr; clean cross-node TP</li>
+                <li>2&times; BlueField-3 for storage &amp; management</li>
+                <li>Total node bandwidth 3.2 Tb/s east-west</li>
+            </ul>
+        </div>
+    </div>
+
+    <h3>Picking the right Hopper</h3>
+    <ul>
+        <li><strong>Training a frontier model</strong>: SXM5 in HGX/DGX, period. PCIe variants don't have the NVLink fabric for tensor-parallel scaling.</li>
+        <li><strong>Inference of a 70B-class model</strong>: H100 NVL or H200; the extra memory matters more than peak compute.</li>
+        <li><strong>Mixed enterprise server, occasional ML</strong>: H100 PCIe; don't pretend you'll do TP.</li>
+        <li><strong>Massive context, KV-cache-bound serving</strong>: H200, then GH200 if context truly exceeds HBM.</li>
+        <li><strong>Sparse MoE or recommender models with huge embeddings</strong>: GH200 &mdash; the 480 GB of LPDDR5x as EGM is the right tool.</li>
+    </ul>
+</section>
+
+<section class="slide" id="slide-10">
+    <div class="slide-number">10</div>
+    <h2>Performance &mdash; Why H100 Changed Everything</h2>
+    <p>The headline NVIDIA pushed at GTC 2022 was <strong>9&times; training throughput vs A100</strong> on large transformer workloads. The number is real but it's a stack of independent wins; understanding which contributes how much tells you what you actually buy when you upgrade.</p>
+
+    <h3>Where the 9&times; comes from</h3>
+    <div class="tier-visual">
+        <div class="tier-bar">
+            <div class="tier-label">BF16 raw</div>
+            <div class="tier-fill" style="width:30%; background: rgba(165,214,255,0.4); color:#a5d6ff;">~3&times; (more SMs + clocks vs A100)</div>
+            <div class="tier-cost">cumulative 3&times;</div>
+        </div>
+        <div class="tier-bar">
+            <div class="tier-label">FP8</div>
+            <div class="tier-fill" style="width:50%; background: rgba(118,185,0,0.4); color:#76B900;">2&times; over BF16 = 6&times;</div>
+            <div class="tier-cost">cumulative 6&times;</div>
+        </div>
+        <div class="tier-bar">
+            <div class="tier-label">TMA + cluster</div>
+            <div class="tier-fill" style="width:60%; background: rgba(210,168,255,0.4); color:#d2a8ff;">~1.3&times; (overlap, larger tiles)</div>
+            <div class="tier-cost">cumulative ~7.5&times;</div>
+        </div>
+        <div class="tier-bar">
+            <div class="tier-label">Bigger L2 + HBM3</div>
+            <div class="tier-fill" style="width:75%; background: rgba(255,166,87,0.4); color:#ffa657;">~1.2&times; (less HBM pressure)</div>
+            <div class="tier-cost">cumulative ~9&times;</div>
+        </div>
+    </div>
+
+    <p>The four wins compound because they are independent: doubling FP-throughput while halving memory reads while reducing kernel-launch overhead while increasing tile size all multiply rather than add. None of them on its own buys the headline; together they do.</p>
+
+    <h3>For LLM serving</h3>
+    <ul>
+        <li>FP8 weights halve the per-token bytes read from HBM &rarr; <strong>decode tok/s roughly doubles</strong> on bandwidth-bound shapes.</li>
+        <li>FP8 KV cache halves the per-token KV bytes too &rarr; longer context fits, batch sizes grow.</li>
+        <li>WGMMA + TMA make prefill compute-bound rather than overhead-bound &rarr; <strong>prefill throughput jumps 3&ndash;4&times;</strong> over A100 on the same shapes.</li>
+        <li>Decode is bandwidth-bound either way &mdash; the H100 vs A100 gap there is closer to bandwidth ratio (3.35 / 2.0 = 1.7&times;) than to FLOPS ratio.</li>
+    </ul>
+
+    <h3>Worked example &mdash; Llama-3-70B in vLLM</h3>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>GPU</th><th>Quant</th><th>Prefill (tok/s)</th><th>Decode (tok/s/stream)</th><th>Notes</th></tr></thead>
+            <tbody>
+                <tr><td>A100 80 GB</td><td>BF16, no FP8 KV</td><td>~25 000</td><td>~38</td><td>BW-bound at 2 TB/s; FP8 emulated, no compute win.</td></tr>
+                <tr><td>H100 SXM5 80 GB</td><td>FP8 + FP8 KV</td><td><strong>~110 000</strong></td><td>~62</td><td>Native FP8, TE quantises both weights and KV.</td></tr>
+                <tr><td>H200 141 GB</td><td>FP8 + FP8 KV</td><td>~115 000</td><td>~85</td><td>Compute identical; bandwidth (4.8 TB/s) lifts decode.</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="callout">
+        <div class="callout-label">The honest summary</div>
+        <p>H100 over A100 buys you ~4&times; on prefill (where compute matters) and ~1.7&times; on per-stream decode (where bandwidth matters). H200 over H100 buys you mostly memory capacity and decode bandwidth; prefill throughput is barely changed. The 9&times; figure NVIDIA quotes is end-to-end on training a transformer, where chunked prefill, overlap, and FP8 compound over many millions of microbatches.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-11">
+    <div class="slide-number">11</div>
+    <h2>Interactive: Which Hopper for What?</h2>
+    <p>Pick a Hopper SKU. Get the headline numbers and a one-line use-case recommendation.</p>
+
+    <div class="control-panel">
+        <div class="control-row">
+            <label for="hop-sku">SKU</label>
+            <select id="hop-sku">
+                <option value="h100pcie">H100 PCIe 80 GB</option>
+                <option value="h100sxm" selected>H100 SXM5 80 GB</option>
+                <option value="h100nvl">H100 NVL 94 GB</option>
+                <option value="h200">H200 SXM5 141 GB</option>
+                <option value="gh200">GH200 (Grace + Hopper + 480 GB LPDDR5x)</option>
+            </select>
+        </div>
+        <div id="hop-out" class="result-box"></div>
+        <div class="metric-grid">
+            <div class="metric"><div class="metric-label">VRAM</div><div class="metric-value" id="hm-vram">&mdash;</div></div>
+            <div class="metric"><div class="metric-label">Bandwidth GB/s</div><div class="metric-value" id="hm-bw">&mdash;</div></div>
+            <div class="metric"><div class="metric-label">TDP (W)</div><div class="metric-value" id="hm-tdp">&mdash;</div></div>
+            <div class="metric"><div class="metric-label">NVLink</div><div class="metric-value" id="hm-nvl">&mdash;</div></div>
+            <div class="metric"><div class="metric-label">FP8 dense TFLOPS</div><div class="metric-value" id="hm-fp8">&mdash;</div></div>
+            <div class="metric"><div class="metric-label">Notes</div><div class="metric-value" id="hm-note" style="font-size:0.85rem;">&mdash;</div></div>
+        </div>
+    </div>
+
+    <script>
+    (function(){
+        const skus = {
+            'h100pcie': {
+                vram: '80 GB HBM3', bw: 2000, tdp: 350,
+                nvl: 'bridge (2-card)', fp8: 1513,
+                note: 'Mixed servers',
+                long: 'Stock workstation/server slot. Half the bandwidth of SXM5; no NVSwitch fabric. Use when you need a single Hopper in an existing PCIe box and you accept that TP scaling beyond 2 cards will hurt.',
+                rec: 'Pick this for: occasional inference in a mixed enterprise server, single-GPU dev box.'
+            },
+            'h100sxm': {
+                vram: '80 GB HBM3', bw: 3350, tdp: 700,
+                nvl: 'NVLink 4 + NVSwitch (900 GB/s)', fp8: 1979,
+                note: 'Default training SKU',
+                long: 'The HGX baseboard SKU. 8 of these in a DGX H100. Full NVLink fabric means TP up to 8 scales near-linearly. The default for serious training and high-throughput inference clusters.',
+                rec: 'Pick this for: training frontier models, max-throughput vLLM/TRT-LLM serving.'
+            },
+            'h100nvl': {
+                vram: '94 GB HBM3', bw: 3900, tdp: 700,
+                nvl: 'paired NVLink', fp8: 1671,
+                note: 'Llama-2-70B fits',
+                long: 'Two H100 PCIe boards bridged with NVLink, sold as a pair binned for higher VRAM. Built specifically because 70B FP16 weights wouldn\'t fit on one stock H100. PCIe form factor, but with TP=2 over the bridge.',
+                rec: 'Pick this for: 70B-class inference where you want PCIe ergonomics.'
+            },
+            'h200': {
+                vram: '141 GB HBM3e', bw: 4800, tdp: 700,
+                nvl: 'NVLink 4 + NVSwitch', fp8: 1979,
+                note: 'KV-cache headroom',
+                long: 'Same GH100 die as H100; the news is HBM3e &mdash; 6 stacks instead of 5, denser per stack, faster signalling. Drops into HGX boards with a firmware update. Compute identical to H100; capacity and decode bandwidth are the wins.',
+                rec: 'Pick this for: long-context decode, 70B FP16 inference, KV-cache-bound serving.'
+            },
+            'gh200': {
+                vram: '96 GB HBM3 + 480 GB LPDDR5x', bw: 4000, tdp: 1000,
+                nvl: 'NVLink-C2C to Grace (900 GB/s)', fp8: 1979,
+                note: 'EGM superchip',
+                long: 'Grace ARM CPU + Hopper GPU on one module, joined by 900 GB/s NVLink-C2C. The CPU\'s 480 GB of LPDDR5x is exposed to the GPU as Extended GPU Memory. Bandwidth-asymmetric (HBM ~4 TB/s, LPDDR ~0.5 TB/s) but capacity-spectacular.',
+                rec: 'Pick this for: huge embeddings, sparse MoE, models that exceed HBM, recommender systems.'
+            }
+        };
+        function rec(){
+            const k = document.getElementById('hop-sku').value;
+            const s = skus[k];
+            document.getElementById('hm-vram').textContent = s.vram;
+            document.getElementById('hm-bw').textContent   = s.bw;
+            document.getElementById('hm-tdp').textContent  = s.tdp;
+            document.getElementById('hm-nvl').textContent  = s.nvl;
+            document.getElementById('hm-fp8').textContent  = s.fp8;
+            document.getElementById('hm-note').textContent = s.note;
+            document.getElementById('hop-out').innerHTML =
+                '<div><span class="line-label">summary</span> &rarr; <span class="line-val">' + s.note + '</span></div>' +
+                '<div style="margin-top:0.5rem;color:var(--text-secondary);">' + s.long + '</div>' +
+                '<div style="margin-top:0.5rem;"><span class="line-label">recommendation</span> &rarr; <span class="line-val">' + s.rec + '</span></div>';
+        }
+        document.getElementById('hop-sku').addEventListener('change', rec);
+        rec();
+    })();
+    </script>
+
+    <div class="callout">
+        <div class="callout-label">Headline numbers, all SKUs</div>
+        <p>Same GH100 die under all five products. FP8 dense throughput differs only because of clock and SM-enable counts (H100 NVL bins lower than the SXM5). Bandwidth is the bigger differentiator: HBM3 vs HBM3e doubles per-stack throughput, and the GH200's LPDDR5x extension trades bandwidth for capacity in a way no other Hopper SKU does.</p>
+    </div>
+</section>
+
+<!-- ════════════════════════════════════ Footer ════════════════════════════════════ -->
+<footer class="footer">
+    <p>Part of the <a href="https://github.com/BrendanJamesLynskey/LLMs#nvidia-gpu-architectures">NVIDIA GPU Architectures Series</a></p>
+    <p style="margin-top: 0.5rem; font-size: 0.8rem;"><a href="https://github.com/BrendanJamesLynskey/LLMs#nvidia-gpu-architectures">Back to Series Index</a></p>
+</footer>
+
+<script>
+    // Smooth scroll for TOC links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const target = document.querySelector(this.getAttribute('href'));
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+
+    // Subtle fade-in on scroll
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.style.opacity = '1';
+                entry.target.style.transform = 'translateY(0)';
+            }
+        });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.slide').forEach(slide => {
+        slide.style.opacity = '0';
+        slide.style.transform = 'translateY(30px)';
+        slide.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+        observer.observe(slide);
+    });
+</script>
+
+</body>
+</html>
