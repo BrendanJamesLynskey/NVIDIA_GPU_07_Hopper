@@ -6,7 +6,7 @@
     <title>NVIDIA GPU 07 — Hopper Deep Dive</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,500;0,600;0,700;1,400;1,700&family=Titillium+Web:ital,wght@0,300;0,400;0,600;0,700;1,400;1,700&family=Roboto+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400;1,700&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-primary: #1b1b1a;
@@ -18,9 +18,9 @@
             --accent-dim: #b8b31544;
             --accent-glow: #b8b31533;
             --border: #363633;
-            --font-display: 'Space Grotesk', sans-serif;
-            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-            --font-body: 'Inter', sans-serif;
+            --font-display: 'Chakra Petch', sans-serif;
+            --font-mono: 'Roboto Mono', 'Roboto Mono', monospace;
+            --font-body: 'Titillium Web', sans-serif;
             --max-width: 900px;
         }
 
@@ -885,9 +885,9 @@
                 .l2   { fill: rgba(209,194,225,0.25); stroke: #d1c2e1; }
                 .hbm  { fill: rgba(224,177,114,0.25); stroke: #e0b172; }
                 .hbm-d{ fill: rgba(229,125,99,0.18); stroke: #e57d63; stroke-dasharray: 3 3;}
-                .t    { fill: #edede7; font-family: 'JetBrains Mono', monospace; font-size: 10px; }
-                .h    { fill: #b8b315; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; }
-                .lbl  { fill: #9b9b95; font-family: 'JetBrains Mono', monospace; font-size: 9px; }
+                .t    { fill: #edede7; font-family: 'Roboto Mono', monospace; font-size: 10px; }
+                .h    { fill: #b8b315; font-family: 'Chakra Petch', sans-serif; font-weight: 600; font-size: 13px; }
+                .lbl  { fill: #9b9b95; font-family: 'Roboto Mono', monospace; font-size: 9px; }
             </style>
             <text x="10" y="18" class="h">GH100 floorplan &mdash; schematic only</text>
 
@@ -951,10 +951,10 @@
                 .ldst { fill: rgba(201,219,226,0.18); stroke: #c9dbe2; }
                 .new  { fill: rgba(184,179,21,0.40); stroke: #b8b315; }
                 .sh   { fill: rgba(209,194,225,0.18); stroke: #d1c2e1; }
-                .t    { fill: #edede7; font-family: 'JetBrains Mono', monospace; font-size: 9px; }
-                .h    { fill: #b8b315; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; }
-                .lbl  { fill: #9b9b95; font-family: 'JetBrains Mono', monospace; font-size: 9px; }
-                .lh   { fill: #edede7; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 11px; }
+                .t    { fill: #edede7; font-family: 'Roboto Mono', monospace; font-size: 9px; }
+                .h    { fill: #b8b315; font-family: 'Chakra Petch', sans-serif; font-weight: 600; font-size: 13px; }
+                .lbl  { fill: #9b9b95; font-family: 'Roboto Mono', monospace; font-size: 9px; }
+                .lh   { fill: #edede7; font-family: 'Chakra Petch', sans-serif; font-weight: 600; font-size: 11px; }
             </style>
             <text x="10" y="18" class="h">Hopper SM &mdash; 4 partitions, new asynchronous units, 256 KB unified L1+SMEM</text>
 
@@ -1176,9 +1176,9 @@ loss.<span class="fn">backward</span>()                       <span class="cm">#
                 .tma  { fill: rgba(184,179,21,0.40); stroke: #b8b315; }
                 .arr  { stroke: #b8b315; stroke-width: 2; fill: none; marker-end: url(#ah); }
                 .arr2 { stroke: #e57d63; stroke-width: 2; fill: none; marker-end: url(#ah2); stroke-dasharray: 4 3;}
-                .t    { fill: #edede7; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
-                .h    { fill: #b8b315; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 13px; }
-                .lbl  { fill: #9b9b95; font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+                .t    { fill: #edede7; font-family: 'Roboto Mono', monospace; font-size: 11px; }
+                .h    { fill: #b8b315; font-family: 'Chakra Petch', sans-serif; font-weight: 600; font-size: 13px; }
+                .lbl  { fill: #9b9b95; font-family: 'Roboto Mono', monospace; font-size: 10px; }
             </style>
             <defs>
                 <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
