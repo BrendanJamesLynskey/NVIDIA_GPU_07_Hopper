@@ -1387,7 +1387,7 @@ H[i][j] = h; E[i][j] = e; F[i][j] = f;</code></pre>
                 </tr>
                 <tr>
                     <td><strong>H100 PCIe</strong></td>
-                    <td>80 GB HBM3</td>
+                    <td>80 GB HBM2e</td>
                     <td>2.0</td>
                     <td>350</td>
                     <td>NVLink bridge (2-card)</td>
@@ -1497,9 +1497,9 @@ H[i][j] = h; E[i][j] = e; F[i][j] = f;</code></pre>
         <table>
             <thead><tr><th>GPU</th><th>Quant</th><th>Prefill (tok/s)</th><th>Decode (tok/s/stream)</th><th>Notes</th></tr></thead>
             <tbody>
-                <tr><td>A100 80 GB</td><td>BF16, no FP8 KV</td><td>~25 000</td><td>~38</td><td>BW-bound at 2 TB/s; FP8 emulated, no compute win.</td></tr>
-                <tr><td>H100 SXM5 80 GB</td><td>FP8 + FP8 KV</td><td><strong>~110 000</strong></td><td>~62</td><td>Native FP8, TE quantises both weights and KV.</td></tr>
-                <tr><td>H200 141 GB</td><td>FP8 + FP8 KV</td><td>~115 000</td><td>~85</td><td>Compute identical; bandwidth (4.8 TB/s) lifts decode.</td></tr>
+                <tr><td>2&times; A100 80 GB (TP=2)</td><td>BF16, no FP8 KV</td><td>~25 000</td><td>&le; ~29</td><td>140 GB of BF16 weights need two cards; each streams 70 GB at 2 TB/s.</td></tr>
+                <tr><td>H100 SXM5 80 GB</td><td>FP8 + FP8 KV</td><td><strong>~110 000</strong></td><td>&le; ~48</td><td>Native FP8, TE quantises both weights and KV.</td></tr>
+                <tr><td>H200 141 GB</td><td>FP8 + FP8 KV</td><td>~115 000</td><td>&le; ~69</td><td>Compute identical; bandwidth (4.8 TB/s) lifts decode.</td></tr>
             </tbody>
         </table>
     </div>
@@ -1541,7 +1541,7 @@ H[i][j] = h; E[i][j] = e; F[i][j] = f;</code></pre>
     (function(){
         const skus = {
             'h100pcie': {
-                vram: '80 GB HBM3', bw: 2000, tdp: 350,
+                vram: '80 GB HBM2e', bw: 2000, tdp: 350,
                 nvl: 'bridge (2-card)', fp8: 1513,
                 note: 'Mixed servers',
                 long: 'Stock workstation/server slot. Half the bandwidth of SXM5; no NVSwitch fabric. Use when you need a single Hopper in an existing PCIe box and you accept that TP scaling beyond 2 cards will hurt.',
